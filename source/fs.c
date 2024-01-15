@@ -31,7 +31,6 @@ misrepresented as being the original software.
 #include <string.h>
 #include <sys/dir.h>
 #include <unistd.h>
-#include <wiiuse/wpad.h>
 
 #include "fs.h"
 
@@ -177,8 +176,8 @@ void process_remount_event() {
 
 void process_device_select_event(u32 pressed) {
     if (mountstate == MOUNTSTATE_SELECTDEVICE) {
-        if (pressed & WPAD_BUTTON_UP) mount_partition = PA_GCSDA;
-        else if (pressed & WPAD_BUTTON_DOWN) mount_partition = PA_GCSDB;
+        if (pressed & PAD_BUTTON_UP) mount_partition = PA_GCSDA;
+        else if (pressed & PAD_BUTTON_DOWN) mount_partition = PA_GCSDB;
         if (mount_partition) {
             mountstate = MOUNTSTATE_WAITFORDEVICE;
             if (is_fat(mount_partition)) unmount(mount_partition);

@@ -21,16 +21,10 @@ misrepresented as being the original software.
 3.This notice may not be removed or altered from any source distribution.
 
 */
-#include <wiiuse/wpad.h>
+#include <ogc/pad.h>
+#include <ogc/video.h>
 
 #include "pad.h"
-
-u32 check_wiimote(u32 mask) {
-    WPAD_ScanPads();
-    u32 pressed = WPAD_ButtonsDown(0);
-    if (pressed & mask) return pressed;
-    return 0;
-}
 
 u32 check_gamecube(u32 mask) {
     PAD_ScanPads();

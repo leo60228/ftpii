@@ -26,8 +26,6 @@ misrepresented as being the original software.
 
 #include <gctypes.h>
 
-u32 check_wiimote(u32 mask);
-
 u32 check_gamecube(u32 mask);
 
 #endif /* _PAD_H */

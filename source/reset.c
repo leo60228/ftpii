@@ -24,7 +24,9 @@ misrepresented as being the original software.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <wiiuse/wpad.h>
+#include <ogc/pad.h>
+#include <ogc/system.h>
+#include <ogc/video.h>
 
 #include "pad.h"
 #include "reset.h"
@@ -48,11 +50,10 @@ static void set_power_flag() {
 void initialise_reset_buttons() {
     SYS_SetResetCallback(set_reset_flag);
     SYS_SetPowerCallback(set_power_flag);
-    WPAD_SetPowerButtonCallback(set_power_flag);
 }
 
 bool check_reset_synchronous() {
-    return _reset || check_wiimote(WPAD_BUTTON_A) || check_gamecube(PAD_BUTTON_A);
+    return _reset || check_gamecube(PAD_BUTTON_A);
 }
 
 void maybe_poweroff() {

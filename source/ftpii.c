@@ -23,12 +23,15 @@ misrepresented as being the original software.
 3.This notice may not be removed or altered from any source distribution.
 
 */
-#include <di/di.h>
 #include <network.h>
+#include <ogc/pad.h>
+#include <ogc/video.h>
+#include <ogc/system.h>
+#include <ogc/color.h>
+#include <ogc/consol.h>
 #include <ogc/lwp_watchdog.h>
 #include <string.h>
 #include <unistd.h>
-#include <wiiuse/wpad.h>
 
 #include "ftp.h"
 #include "fs.h"
@@ -61,7 +64,6 @@ static void initialise_ftpii() {
     initialise_video();
     initialise_video();
     PAD_Init();
-    WPAD_Init();
     initialise_reset_buttons();
     printf("To exit, hold A on controller #1 or press the reset button.\n");
     initialise_network();
@@ -76,25 +78,12 @@ static void set_password_from_executable(char *executable) {
     }
 }
 
-static void process_wiimote_events() {
-    u32 pressed = check_wiimote(WPAD_BUTTON_A | WPAD_BUTTON_B | WPAD_BUTTON_LEFT | WPAD_BUTTON_RIGHT | WPAD_BUTTON_UP | WPAD_BUTTON_DOWN | WPAD_BUTTON_1);
-    if (pressed & WPAD_BUTTON_A) set_reset_flag();
-    else if (pressed & WPAD_BUTTON_B) process_remount_event();
-    else if (pressed & (WPAD_BUTTON_LEFT | WPAD_BUTTON_RIGHT | WPAD_BUTTON_UP | WPAD_BUTTON_DOWN | WPAD_BUTTON_1)) process_device_select_event(pressed);
-}
-
 static void process_gamecube_events() {
     u32 pressed = check_gamecube(PAD_BUTTON_A | PAD_BUTTON_B | PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT | PAD_BUTTON_UP | PAD_BUTTON_DOWN | PAD_BUTTON_X);
     if (pressed & PAD_BUTTON_A) set_reset_flag();
     else if (pressed & PAD_BUTTON_B) process_remount_event();
     else if (pressed & (PAD_BUTTON_LEFT | PAD_BUTTON_RIGHT | PAD_BUTTON_UP | PAD_BUTTON_DOWN | PAD_BUTTON_X)) {
-        u32 wpad_pressed = 0;
-        if (pressed & PAD_BUTTON_LEFT) wpad_pressed |= WPAD_BUTTON_LEFT;
-        if (pressed & PAD_BUTTON_RIGHT) wpad_pressed |= WPAD_BUTTON_RIGHT;
-        if (pressed & PAD_BUTTON_UP) wpad_pressed |= WPAD_BUTTON_UP;
-        if (pressed & PAD_BUTTON_DOWN) wpad_pressed |= WPAD_BUTTON_DOWN;
-        if (pressed & PAD_BUTTON_X) wpad_pressed |= WPAD_BUTTON_1;
-        process_device_select_event(wpad_pressed);
+        process_device_select_event(pressed);
     }
 }
 
@@ -125,7 +114,6 @@ int main(int argc, char **argv) {
             network_down = false;
         }
         network_down = process_ftp_events(server);
-        process_wiimote_events();
         process_gamecube_events();
         process_timer_events();
     }
