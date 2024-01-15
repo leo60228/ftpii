@@ -4,7 +4,7 @@ endif
 
 .SUFFIXES:
 
-include $(DEVKITPPC)/wii_rules
+include $(DEVKITPRO)/libogc2/wii_rules
 
 TARGET	= ftpii
 SOURCES	= source
