@@ -33,7 +33,6 @@ misrepresented as being the original software.
 #include <sys/fcntl.h>
 #include <unistd.h>
 
-#include "dvd.h"
 #include "ftp.h"
 #include "fs.h"
 #include "loader.h"
@@ -60,8 +59,8 @@ struct client_struct {
     char representation_type;
     s32 passive_socket;
     s32 data_socket;
-    char cwd[MAXPATHLEN];
-    char pending_rename[MAXPATHLEN];
+    char cwd[PATH_MAX];
+    char pending_rename[PATH_MAX];
     off_t restart_marker;
     struct sockaddr_in address;
     bool authenticated;
@@ -209,7 +208,7 @@ static s32 ftp_MODE(client_t *client, char *rest) {
 }
 
 static s32 ftp_PWD(client_t *client, char *rest) {
-    char msg[MAXPATHLEN + 24];
+    char msg[PATH_MAX + 24];
     // TODO: escape double-quotes
     sprintf(msg, "\"%s\" is current directory.", client->cwd);
     return write_reply(client, 257, msg);
@@ -248,8 +247,8 @@ static s32 ftp_MKD(client_t *client, char *path) {
         return write_reply(client, 501, "Syntax error in parameters.");
     }
     if (!vrt_mkdir(client->cwd, path, 0777)) {
-        char msg[MAXPATHLEN + 21];
-        char abspath[MAXPATHLEN];
+        char msg[PATH_MAX + 21];
+        char abspath[PATH_MAX];
         strcpy(abspath, client->cwd);
         vrt_chdir(abspath, path); // TODO: error checking
         // TODO: escape double-quotes
@@ -387,12 +386,15 @@ static s32 prepare_data_connection(client_t *client, void *callback, void *arg, 
     return result;
 }
 
-static s32 send_nlst(s32 data_socket, DIR_ITER *dir) {
+static s32 send_nlst(s32 data_socket, DIR_P *iter) {
     s32 result = 0;
-    char filename[MAXPATHLEN + 2];
-    struct stat st;
-    while (vrt_dirnext(dir, filename, &st) == 0) {
-        size_t end_index = strlen(filename);
+    char filename[PATH_MAX];
+    struct dirent *dirent = NULL;
+    while ((dirent = vrt_readdir(iter)) != 0) {
+        size_t end_index = strlen(dirent->d_name);
+        if(end_index + 2 >= PATH_MAX)
+            continue;
+        strcpy(filename, dirent->d_name);
         filename[end_index] = CRLF[0];
         filename[end_index + 1] = CRLF[1];
         filename[end_index + 2] = '\0';
@@ -403,15 +405,31 @@ static s32 send_nlst(s32 data_socket, DIR_ITER *dir) {
     return result < 0 ? result : 0;
 }
 
-static s32 send_list(s32 data_socket, DIR_ITER *dir) {
-    s32 result = 0;
-    char filename[MAXPATHLEN];
+static s32 send_list(s32 data_socket, DIR_P *iter) {
     struct stat st;
-    char line[MAXPATHLEN + 56 + CRLF_LENGTH + 1];
-    while (vrt_dirnext(dir, filename, &st) == 0) {
+    s32 result = 0;
+    time_t mtime = 0;
+    u64 size = 0;
+    char filename[PATH_MAX];
+    char line[PATH_MAX + 56 + CRLF_LENGTH + 1];
+    struct dirent *dirent = NULL;
+    while ((dirent = vrt_readdir(iter)) != 0) {
+
+        snprintf(filename, sizeof(filename), "%s/%s", iter->path, dirent->d_name);
+        if(stat(filename, &st) == 0)
+        {
+            mtime = st.st_mtime;
+            size = st.st_size;
+        }
+        else
+        {
+            mtime = time(0);
+            size = 0;
+        }
+
         char timestamp[13];
-        strftime(timestamp, sizeof(timestamp), "%b %d  %Y", localtime(&st.st_mtime));
-        sprintf(line, "%crwxr-xr-x    1 0        0     %10llu %s %s\r\n", (st.st_mode & S_IFDIR) ? 'd' : '-', st.st_size, timestamp, filename);
+        strftime(timestamp, sizeof(timestamp), "%b %d  %Y", localtime(&mtime));
+        snprintf(line, sizeof(line), "%crwxr-xr-x	1 0		0	 %10llu %s %s\r\n", (dirent->d_type & DT_DIR) ? 'd' : '-', size, timestamp, dirent->d_name);
         if ((result = send_exact(data_socket, line, strlen(line))) < 0) {
             break;
         }
@@ -424,13 +442,13 @@ static s32 ftp_NLST(client_t *client, char *path) {
         path = ".";
     }
 
-    DIR_ITER *dir = vrt_diropen(client->cwd, path);
+    DIR_P *dir = vrt_opendir(client->cwd, path);
     if (dir == NULL) {
         return write_reply(client, 550, strerror(errno));
     }
 
-    s32 result = prepare_data_connection(client, send_nlst, dir, vrt_dirclose);
-    if (result < 0) vrt_dirclose(dir);
+    s32 result = prepare_data_connection(client, send_nlst, dir, vrt_closedir);
+    if (result < 0) vrt_closedir(dir);
     return result;
 }
 
@@ -447,13 +465,13 @@ static s32 ftp_LIST(client_t *client, char *path) {
         path = ".";
     }
 
-    DIR_ITER *dir = vrt_diropen(client->cwd, path);
+    DIR_P *dir = vrt_opendir(client->cwd, path);
     if (dir == NULL) {
         return write_reply(client, 550, strerror(errno));
     }
 
-    s32 result = prepare_data_connection(client, send_list, dir, vrt_dirclose);
-    if (result < 0) vrt_dirclose(dir);
+    s32 result = prepare_data_connection(client, send_list, dir, vrt_closedir);
+    if (result < 0) vrt_closedir(dir);
     return result;
 }
 
@@ -548,11 +566,6 @@ static s32 ftp_SITE_NOPASSWD(client_t *client, char *rest) {
     return write_reply(client, 200, "Authentication disabled.");
 }
 
-static s32 ftp_SITE_EJECT(client_t *client, char *rest) {
-    if (dvd_eject()) return write_reply(client, 550, "Unable to eject DVD.");
-    return write_reply(client, 200, "DVD ejected.");
-}
-
 static s32 ftp_SITE_MOUNT(client_t *client, char *path) {
     if (!mount_virtual(path)) return write_reply(client, 550, "Unable to mount.");
     return write_reply(client, 250, "Mounted.");
@@ -592,8 +605,8 @@ static s32 dispatch_to_handler(client_t *client, char *cmd_line, const char **co
     return handlers[i](client, rest);
 }
 
-static const char *site_commands[] = { "LOADER", "CLEAR", "CHMOD", "PASSWD", "NOPASSWD", "EJECT", "MOUNT", "UNMOUNT", "LOAD", NULL };
-static const ftp_command_handler site_handlers[] = { ftp_SITE_LOADER, ftp_SITE_CLEAR, ftp_SITE_CHMOD, ftp_SITE_PASSWD, ftp_SITE_NOPASSWD, ftp_SITE_EJECT, ftp_SITE_MOUNT, ftp_SITE_UNMOUNT, ftp_SITE_LOAD, ftp_SITE_UNKNOWN };
+static const char *site_commands[] = { "LOADER", "CLEAR", "CHMOD", "PASSWD", "NOPASSWD", "MOUNT", "UNMOUNT", "LOAD", NULL };
+static const ftp_command_handler site_handlers[] = { ftp_SITE_LOADER, ftp_SITE_CLEAR, ftp_SITE_CHMOD, ftp_SITE_PASSWD, ftp_SITE_NOPASSWD, ftp_SITE_MOUNT, ftp_SITE_UNMOUNT, ftp_SITE_LOAD, ftp_SITE_UNKNOWN };
 
 static s32 ftp_SITE(client_t *client, char *cmd_line) {
     return dispatch_to_handler(client, cmd_line, site_commands, site_handlers);

@@ -30,7 +30,6 @@ misrepresented as being the original software.
 #include <unistd.h>
 #include <wiiuse/wpad.h>
 
-#include "dvd.h"
 #include "ftp.h"
 #include "fs.h"
 #include "net.h"
@@ -60,7 +59,6 @@ static void initialise_video() {
 
 static void initialise_ftpii() {
     initialise_video();
-    DI_Init();
     initialise_video();
     PAD_Init();
     WPAD_Init();
@@ -102,7 +100,6 @@ static void process_gamecube_events() {
 
 static void process_timer_events() {
     u64 now = gettime();
-    check_dvd_motor_timeout(now);
     check_mount_timer(now);
     check_removable_devices(now);
 }
@@ -127,7 +124,6 @@ int main(int argc, char **argv) {
             printf("Listening on TCP port %u...\n", PORT);
             network_down = false;
         }
-        check_dvd_mount();
         network_down = process_ftp_events(server);
         process_wiimote_events();
         process_gamecube_events();
@@ -140,10 +136,6 @@ int main(int argc, char **argv) {
     for (i = 0; i < MAX_VIRTUAL_PARTITIONS; i++) unmount(VIRTUAL_PARTITIONS + i);
 
     printf("\nKTHXBYE\n");
-
-    dvd_stop();
-    DI_Close();
-    ISFS_Deinitialize();
 
     maybe_poweroff();
     return 0;

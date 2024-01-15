@@ -25,8 +25,19 @@ misrepresented as being the original software.
 #ifndef _VRT_H_
 #define _VRT_H_
 
+#ifdef __cplusplus
+extern "C"{
+#endif
+
 #include <stdio.h>
-#include <sys/dir.h>
+#include <sys/dirent.h>
+
+typedef struct
+{
+	DIR *dir;
+	char *path;
+	u8 virt_root;
+} DIR_P;
 
 char *to_real_path(char *virtual_cwd, char *virtual_path);
 
@@ -36,8 +47,12 @@ int vrt_chdir(char *cwd, char *path);
 int vrt_unlink(char *cwd, char *path);
 int vrt_mkdir(char *cwd, char *path, mode_t mode);
 int vrt_rename(char *cwd, char *from_path, char *to_path);
-DIR_ITER *vrt_diropen(char *cwd, char *path);
-int vrt_dirnext(DIR_ITER *iter, char *filename, struct stat *st);
-int vrt_dirclose(DIR_ITER *iter);
+DIR_P *vrt_opendir(char *cwd, char *path);
+struct dirent *vrt_readdir(DIR_P *iter);
+int vrt_closedir(DIR_P *iter);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _VRT_H_ */

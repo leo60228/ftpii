@@ -26,258 +26,297 @@ misrepresented as being the original software.
 #include <malloc.h>
 #include <stdarg.h>
 #include <string.h>
-#include <sys/dir.h>
+#include <sys/dirent.h>
 #include <unistd.h>
+#include <gctypes.h>
 
 #include "fs.h"
 #include "vrt.h"
 
-static const u32 VRT_DEVICE_ID = 38744;
-
 static char *virtual_abspath(char *virtual_cwd, char *virtual_path) {
-    char *path;
-    if (virtual_path[0] == '/') {
-        path = virtual_path;
-    } else {
-        size_t path_size = strlen(virtual_cwd) + strlen(virtual_path) + 1;
-        if (path_size > MAXPATHLEN || !(path = malloc(path_size))) return NULL;
-        strcpy(path, virtual_cwd);
-        strcat(path, virtual_path);
-    }
-    
-    char *normalised_path = malloc(strlen(path) + 1);
-    if (!normalised_path) goto end;
-    *normalised_path = '\0';
-    char *curr_dir = normalised_path;
+	char *path;
+	if (virtual_path[0] == '/') {
+		path = virtual_path;
+	} else {
+		size_t path_size = strlen(virtual_cwd) + strlen(virtual_path) + 1;
+		if (path_size > PATH_MAX || !(path = malloc(path_size))) return NULL;
+		strcpy(path, virtual_cwd);
+		strcat(path, virtual_path);
+	}
 
-    u32 state = 0; // 0:start, 1:slash, 2:dot, 3:dotdot
-    char *token = path;
-    while (1) {
-        switch (state) {
-        case 0:
-            if (*token == '/') {
-                state = 1;
-                curr_dir = normalised_path + strlen(normalised_path);
-                strncat(normalised_path, token, 1);
-            }
-            break;
-        case 1:
-            if (*token == '.') state = 2;
-            else if (*token != '/') state = 0;
-            break;
-        case 2:
-            if (*token == '/' || !*token) {
-                state = 1;
-                *(curr_dir + 1) = '\0';
-            } else if (*token == '.') state = 3;
-            else state = 0;
-            break;
-        case 3:
-            if (*token == '/' || !*token) {
-                state = 1;
-                *curr_dir = '\0';
-                char *prev_dir = strrchr(normalised_path, '/');
-                if (prev_dir) curr_dir = prev_dir;
-                else *curr_dir = '/';
-                *(curr_dir + 1) = '\0';
-            } else state = 0;
-            break;
-        }
-        if (!*token) break;
-        if (state == 0 || *token != '/') strncat(normalised_path, token, 1);
-        token++;
-    }
+	char *normalised_path = malloc(strlen(path) + 1);
+	if (!normalised_path) goto end;
+	*normalised_path = '\0';
+	char *curr_dir = normalised_path;
 
-    u32 end = strlen(normalised_path);
-    while (end > 1 && normalised_path[end - 1] == '/') {
-        normalised_path[--end] = '\x00';
-    }
+	u32 state = 0; // 0:start, 1:slash, 2:dot, 3:dotdot
+	char *token = path;
+	while (1) {
+		switch (state) {
+		case 0:
+			if (*token == '/') {
+				state = 1;
+				curr_dir = normalised_path + strlen(normalised_path);
+				strncat(normalised_path, token, 1);
+			}
+			break;
+		case 1:
+			if (*token == '.') state = 2;
+			else if (*token != '/') state = 0;
+			break;
+		case 2:
+			if (*token == '/' || !*token) {
+				state = 1;
+				*(curr_dir + 1) = '\0';
+			} else if (*token == '.') state = 3;
+			else state = 0;
+			break;
+		case 3:
+			if (*token == '/' || !*token) {
+				state = 1;
+				*curr_dir = '\0';
+				char *prev_dir = strrchr(normalised_path, '/');
+				if (prev_dir) curr_dir = prev_dir;
+				else *curr_dir = '/';
+				*(curr_dir + 1) = '\0';
+			} else state = 0;
+			break;
+		}
+		if (!*token) break;
+		if (state == 0 || *token != '/') strncat(normalised_path, token, 1);
+		token++;
+	}
 
-    end:
-    if (path != virtual_path) free(path);
-    return normalised_path;
+	u32 end = strlen(normalised_path);
+	while (end > 1 && normalised_path[end - 1] == '/') {
+		normalised_path[--end] = '\x00';
+	}
+
+	end:
+	if (path != virtual_path) free(path);
+	return normalised_path;
 }
 
 /*
-    Converts a client-visible path to a real absolute path
-    E.g. "/sd/foo"    -> "sd:/foo"
-         "/sd"        -> "sd:/"
-         "/sd/../usb" -> "usb:/"
-    The resulting path will fit in an array of size MAXPATHLEN
-    Returns NULL to indicate that the client-visible path is invalid
+	Converts a client-visible path to a real absolute path
+	E.g. "/sd/foo"	-> "sd:/foo"
+		 "/sd"		-> "sd:/"
+		 "/sd/../usb" -> "usb:/"
+	The resulting path will fit in an array of size PATH_MAX
+	Returns NULL to indicate that the client-visible path is invalid
 */
 char *to_real_path(char *virtual_cwd, char *virtual_path) {
-    errno = ENOENT;
-    if (strchr(virtual_path, ':')) {
-        return NULL; // colon is not allowed in virtual path, i've decided =P
-    }
+	errno = ENOENT;
+	if (strchr(virtual_path, ':')) {
+		return NULL; // colon is not allowed in virtual path, i've decided =P
+	}
 
-    virtual_path = virtual_abspath(virtual_cwd, virtual_path);
-    if (!virtual_path) return NULL;
+	virtual_path = virtual_abspath(virtual_cwd, virtual_path);
+	if (!virtual_path) return NULL;
 
-    char *path = NULL;
-    char *rest = virtual_path;
+	char *path = NULL;
+	char *rest = virtual_path;
 
-    if (!strcmp("/", virtual_path)) {
-        // indicate vfs-root with ""
-        path = "";
-        goto end;
-    }
+	if (!strcmp("/", virtual_path)) {
+		// indicate vfs-root with ""
+		path = "";
+		goto end;
+	}
 
-    const char *prefix = NULL;
-    u32 i;
-    for (i = 0; i < MAX_VIRTUAL_PARTITIONS; i++) {
-        VIRTUAL_PARTITION *partition = VIRTUAL_PARTITIONS + i;
-        const char *alias = partition->alias;
-        size_t alias_len = strlen(alias);
-        if (!strcasecmp(alias, virtual_path) || (!strncasecmp(alias, virtual_path, alias_len) && virtual_path[alias_len] == '/')) {
-            prefix = partition->prefix;
-            rest += alias_len;
-            if (*rest == '/') rest++;
-            break;
-        }
-    }
-    if (!prefix) {
-        errno = ENODEV;
-        goto end;
-    }
-    
-    size_t real_path_size = strlen(prefix) + strlen(rest) + 1;
-    if (real_path_size > MAXPATHLEN) goto end;
+	const char *prefix = NULL;
+	u32 i;
+	for (i = 0; i < MAX_VIRTUAL_PARTITIONS; i++) {
+		VIRTUAL_PARTITION *partition = VIRTUAL_PARTITIONS + i;
+		const char *alias = partition->alias;
+		size_t alias_len = strlen(alias);
+		if (!strcasecmp(alias, virtual_path) || (!strncasecmp(alias, virtual_path, alias_len) && virtual_path[alias_len] == '/')) {
+			prefix = partition->prefix;
+			rest += alias_len;
+			if (*rest == '/') rest++;
+			break;
+		}
+	}
+	if (!prefix) {
+		errno = ENODEV;
+		goto end;
+	}
 
-    path = malloc(real_path_size);
-    if (!path) goto end;
-    strcpy(path, prefix);
-    strcat(path, rest);
+	size_t real_path_size = strlen(prefix) + strlen(rest) + 1;
+	if (real_path_size > PATH_MAX) goto end;
 
-    end:
-    free(virtual_path);
-    return path;
+	path = malloc(real_path_size);
+	if (!path) goto end;
+	strcpy(path, prefix);
+	strcat(path, rest);
+
+	end:
+	free(virtual_path);
+	return path;
 }
 
 typedef void * (*path_func)(char *path, ...);
 
 static void *with_virtual_path(void *virtual_cwd, void *void_f, char *virtual_path, s32 failed, ...) {
-    char *path = to_real_path(virtual_cwd, virtual_path);
-    if (!path || !*path) return (void *)failed;
-    
-    path_func f = (path_func)void_f;
-    va_list ap;
-    void *args[3];
-    unsigned int num_args = 0;
-    va_start(ap, failed);
-    do {
-        void *arg = va_arg(ap, void *);
-        if (!arg) break;
-        args[num_args++] = arg;
-    } while (1);
-    va_end(ap);
-    
-    void *result;
-    switch (num_args) {
-        case 0: result = f(path); break;
-        case 1: result = f(path, args[0]); break;
-        case 2: result = f(path, args[0], args[1]); break;
-        case 3: result = f(path, args[0], args[1], args[2]); break;
-        default: result = (void *)failed;
-    }
-    
-    free(path);
-    return result;
+	char *path = to_real_path(virtual_cwd, virtual_path);
+	if (!path || !*path) return (void *)failed;
+
+	path_func f = (path_func)void_f;
+	va_list ap;
+	void *args[3];
+	unsigned int num_args = 0;
+	va_start(ap, failed);
+	do {
+		void *arg = va_arg(ap, void *);
+		if (!arg) break;
+		args[num_args++] = arg;
+	} while (1);
+	va_end(ap);
+
+	void *result;
+	switch (num_args) {
+		case 0: result = f(path); break;
+		case 1: result = f(path, args[0]); break;
+		case 2: result = f(path, args[0], args[1]); break;
+		case 3: result = f(path, args[0], args[1], args[2]); break;
+		default: result = (void *)failed; break;
+	}
+
+	free(path);
+	return result;
 }
 
 FILE *vrt_fopen(char *cwd, char *path, char *mode) {
-    return with_virtual_path(cwd, fopen, path, 0, mode, NULL);
+	return with_virtual_path(cwd, fopen, path, 0, mode, NULL);
 }
 
 int vrt_stat(char *cwd, char *path, struct stat *st) {
-    char *real_path = to_real_path(cwd, path);
-    if (!real_path) return -1;
-    else if (!*real_path) {
-        st->st_mode = S_IFDIR;
-        st->st_size = 31337;
-        return 0;
-    }
-    free(real_path);
-    return (int)with_virtual_path(cwd, stat, path, -1, st, NULL);
+	char *real_path = to_real_path(cwd, path);
+	if (!real_path) return -1;
+	else if (!*real_path) {
+		st->st_mode = S_IFDIR;
+		st->st_size = 31337;
+		return 0;
+	}
+	free(real_path);
+	return (int)with_virtual_path(cwd, stat, path, -1, st, NULL);
 }
 
 int vrt_chdir(char *cwd, char *path) {
-    struct stat st;
-    if (vrt_stat(cwd, path, &st)) {
-        return -1;
-    } else if (!(st.st_mode & S_IFDIR)) {
-        errno = ENOTDIR;
-        return -1;
-    }
-    char *abspath = virtual_abspath(cwd, path);
-    if (!abspath) {
-        errno = ENOMEM;
-        return -1;
-    }
-    strcpy(cwd, abspath);
-    if (cwd[1]) strcat(cwd, "/");
-    free(abspath);
-    return 0;
+
+	struct stat st;
+	if (vrt_stat(cwd, path, &st)) {
+		return -1;
+	} else if (!(st.st_mode & S_IFDIR)) {
+		errno = ENOTDIR;
+		return -1;
+	}
+	char *abspath = virtual_abspath(cwd, path);
+	if (!abspath) {
+		errno = ENOMEM;
+		return -1;
+	}
+	strcpy(cwd, abspath);
+	if (cwd[1]) strcat(cwd, "/");
+	free(abspath);
+	return 0;
 }
 
 int vrt_unlink(char *cwd, char *path) {
-    return (int)with_virtual_path(cwd, unlink, path, -1, NULL);
+	return (int)with_virtual_path(cwd, unlink, path, -1, NULL);
 }
 
 int vrt_mkdir(char *cwd, char *path, mode_t mode) {
-    return (int)with_virtual_path(cwd, mkdir, path, -1, mode, NULL);
+	return (int)with_virtual_path(cwd, mkdir, path, -1, mode, NULL);
 }
 
 int vrt_rename(char *cwd, char *from_path, char *to_path) {
-    char *real_to_path = to_real_path(cwd, to_path);
-    if (!real_to_path || !*real_to_path) return -1;
-    int result = (int)with_virtual_path(cwd, rename, from_path, -1, real_to_path, NULL);
-    free(real_to_path);
-    return result;
+	char *real_to_path = to_real_path(cwd, to_path);
+	if (!real_to_path || !*real_to_path) return -1;
+	int result = (int)with_virtual_path(cwd, rename, from_path, -1, real_to_path, NULL);
+	free(real_to_path);
+	return result;
 }
 
 /*
-    When in vfs-root this creates a fake DIR_ITER.
+	When in vfs-root this creates a fake DIR_ITER.
  */
-DIR_ITER *vrt_diropen(char *cwd, char *path) {
-    char *real_path = to_real_path(cwd, path);
-    if (!real_path) return NULL;
-    else if (!*real_path) {
-        DIR_ITER *iter = malloc(sizeof(DIR_ITER));
-        if (!iter) return NULL;
-        iter->device = VRT_DEVICE_ID;
-        iter->dirStruct = 0;
-        return iter;
-    }
-    free(real_path);
-    return with_virtual_path(cwd, diropen, path, 0, NULL);
+DIR_P *vrt_opendir(char *cwd, char *path)
+{
+	char *real_path = to_real_path(cwd, path);
+	if (!real_path) return NULL;
+
+	DIR_P *iter = malloc(sizeof(DIR_P));
+	if (!iter)
+	{
+		if (*real_path != 0)
+			free(real_path);
+		return NULL;
+	}
+
+	iter->virt_root = 0;
+	iter->path = real_path;
+
+	if (*iter->path == 0) {
+		iter->dir = malloc(sizeof(DIR));
+		if(!iter->dir) {
+			// root path is not allocated
+			free(iter);
+			return NULL;
+		}
+		memset(iter->dir, 0, sizeof(DIR));
+		iter->virt_root = 1; // we are at the virtual root
+		return iter;
+	}
+
+	iter->dir = with_virtual_path(cwd, opendir, path, 0, NULL);
+	if(!iter->dir)
+	{
+		free(iter->path);
+		free(iter);
+		return NULL;
+	}
+
+	return iter;
 }
 
 /*
-    Yields virtual aliases when iter->device == VRT_DEVICE_ID.
+	Yields virtual aliases when pDir->virt_root
  */
-int vrt_dirnext(DIR_ITER *iter, char *filename, struct stat *st) {
-    if (iter->device == VRT_DEVICE_ID) {
-        for (; (int)iter->dirStruct < MAX_VIRTUAL_PARTITIONS; iter->dirStruct++) {
-            VIRTUAL_PARTITION *partition = VIRTUAL_PARTITIONS + (int)iter->dirStruct;
-            if (mounted(partition)) {
-                st->st_mode = S_IFDIR;
-                st->st_size = 0;
-                strcpy(filename, partition->alias + 1);
-                iter->dirStruct++;
-                return 0;
-            }
-        }
-        return -1;
-    }
-    return dirnext(iter, filename, st);
+struct dirent *vrt_readdir(DIR_P *pDir) {
+	if(!pDir || !pDir->dir) return NULL;
+
+	DIR *iter = pDir->dir;
+	if (pDir->virt_root) {
+		for (; (u32)iter->position < MAX_VIRTUAL_PARTITIONS; iter->position++) {
+			VIRTUAL_PARTITION *partition = VIRTUAL_PARTITIONS + (int)iter->position;
+			if (partition->inserted) {
+				iter->fileData.d_type = DT_DIR;
+				strcpy(iter->fileData.d_name, partition->alias + 1);
+				iter->position++;
+				return &iter->fileData;
+			}
+		}
+		return NULL;
+	}
+	return readdir(iter);
 }
 
-int vrt_dirclose(DIR_ITER *iter) {
-    if (iter->device == VRT_DEVICE_ID) {
-        free(iter);
-        return 0;
-    }
-    return dirclose(iter);
+int vrt_closedir(DIR_P *iter) {
+	if(!iter) return -1;
+
+	if(iter->dir)
+	{
+		if (iter->virt_root)
+			free(iter->dir);
+		else
+			closedir(iter->dir);
+	}
+
+	// root path is not allocated
+	if(iter->path && *iter->path != 0)
+		free(iter->path);
+
+	free(iter);
+
+	return 0;
 }

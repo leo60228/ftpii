@@ -11,7 +11,7 @@ SOURCES	= source
 BUILD	= build
 
 CFLAGS				= -g -O2 -Wall $(MACHDEP) $(INCLUDE)
-LDFLAGS				= -L$(LIBOGC_LIB) -lntfs -lseeprom -lotp -lisfs -lnandimg -lfst -lwod -liso -ldi -lwiiuse -lbte -lfat -logc -lm -g $(MACHDEP) -Wl,-Map,$(notdir $@).map,--section-start,.init=0x80a00000
+LDFLAGS				= -L$(LIBOGC_LIB) -lwiiuse -lbte -lfat -logc -lm -g $(MACHDEP) -Wl,-Map,$(notdir $@).map,--section-start,.init=0x80a00000
 PRELOADER_LDFLAGS	= -L$(LIBOGC_LIB) -logc -g $(MACHDEP) -Wl,-Map,$(notdir $@).map
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
@@ -21,7 +21,7 @@ export VPATH	:= $(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 export DEPSDIR	:= $(CURDIR)/$(BUILD)
 export LD		:= $(CC)
 
-export OFILES			:= reset.o dvd.o pad.o net.o fs.o ftp.o loader.o vrt.o dol.o ftpii.o
+export OFILES			:= reset.o pad.o net.o fs.o ftp.o loader.o vrt.o dol.o ftpii.o
 export PRELOADER_OFILES	:= _$(TARGET).dol.o dol.o preloader.o
 export INCLUDE			:= -I$(CURDIR)/$(BUILD) -I$(LIBOGC_INC)
 
