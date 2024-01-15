@@ -62,7 +62,6 @@ static void initialise_video() {
 
 static void initialise_ftpii() {
     initialise_video();
-    initialise_video();
     PAD_Init();
     initialise_reset_buttons();
     printf("To exit, hold A on controller #1 or press the reset button.\n");

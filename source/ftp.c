@@ -700,7 +700,7 @@ static bool process_accept_events(s32 server) {
     s32 peer;
     struct sockaddr_in client_address;
     socklen_t addrlen = sizeof(client_address);
-    while ((peer = net_accept(server, (struct sockaddr *)&client_address, &addrlen)) != -EAGAIN) {
+    while ((peer = net_accept_nonblocking(server, (struct sockaddr *)&client_address, &addrlen)) != -EAGAIN) {
         if (peer < 0) {
             printf("Error accepting connection: [%i] %s\n", -peer, strerror(-peer));
             return false;
@@ -759,7 +759,7 @@ static void process_data_events(client_t *client) {
         if (client->passive_socket >= 0) {
             struct sockaddr_in data_peer_address;
             socklen_t addrlen = sizeof(data_peer_address);
-            result = net_accept(client->passive_socket, (struct sockaddr *)&data_peer_address ,&addrlen);
+            result = net_accept_nonblocking(client->passive_socket, (struct sockaddr *)&data_peer_address ,&addrlen);
             if (result >= 0) {
                 client->data_socket = result;
                 client->data_connection_connected = true;

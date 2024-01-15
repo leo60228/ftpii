@@ -38,10 +38,14 @@ misrepresented as being the original software.
 static u32 NET_BUFFER_SIZE = MAX_NET_BUFFER_SIZE;
 
 void initialise_network() {
+    struct in_addr s_addr = {0};
+    struct in_addr netmask = {0};
+    struct in_addr gateway = {0};
+
     printf("Waiting for network to initialise...\n");
     s32 result = -1;
     while (!check_reset_synchronous() && result < 0) {
-        while (!check_reset_synchronous() && (result = net_init()) == -EAGAIN);
+        result = if_configex(&s_addr, &netmask, &gateway, TRUE);
         if (result < 0) printf("net_init() failed: [%i] %s, retrying...\n", result, strerror(-result));
     }
     if (result >= 0) {
@@ -59,9 +63,8 @@ void initialise_network() {
 }
 
 s32 set_blocking(s32 s, bool blocking) {
-    s32 flags;
-    flags = net_fcntl(s, F_GETFL, 0);
-    if (flags >= 0) flags = net_fcntl(s, F_SETFL, blocking ? (flags&~4) : (flags|4));
+    s32 flags = blocking;
+    net_ioctl(s, FIONBIO, &flags);
     return flags;
 }
 
@@ -165,5 +168,19 @@ s32 recv_to_file(s32 s, FILE *f) {
 
         s32 bytes_written = fwrite(buf, 1, bytes_read, f);
         if (bytes_written < bytes_read) return -1;
+    }
+}
+
+s32 net_accept_nonblocking(s32 s, struct sockaddr *addr, socklen_t *addrlen) {
+    struct timeval tv = {0};
+    fd_set readset;
+    FD_ZERO(&readset);
+    FD_SET(s, &readset);
+    net_select(FD_SETSIZE, &readset, NULL, NULL, &tv);
+
+    if (FD_ISSET(s, &readset)) {
+        return net_accept(s, addr, addrlen);
+    } else {
+        return -EAGAIN;
     }
 }

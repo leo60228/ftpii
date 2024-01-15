@@ -40,4 +40,6 @@ s32 send_from_file(s32 s, FILE *f);
 
 s32 recv_to_file(s32 s, FILE *f);
 
+s32 net_accept_nonblocking(s32 s, struct sockaddr *addr, socklen_t *addrlen);
+
 #endif /* _NET_H_ */
