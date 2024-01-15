@@ -42,14 +42,8 @@ void set_reset_flag() {
     _reset = true;
 }
 
-static void set_power_flag() {
-    _reset = true;
-    _power = true;
-}
-
 void initialise_reset_buttons() {
     SYS_SetResetCallback(set_reset_flag);
-    SYS_SetPowerCallback(set_power_flag);
 }
 
 bool check_reset_synchronous() {
