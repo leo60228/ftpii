@@ -1,0 +1,56 @@
+name: Build
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    container: webhdx/devkitppc-libogc2:latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install libdvm-ideexi
+        run: |
+          dkp-pacman-key --recv-keys 39F617B9EF0FE021F027D9DC00A759785C24BCCF --keyserver keyserver.ubuntu.com
+          dkp-pacman-key --lsign-key 39F617B9EF0FE021F027D9DC00A759785C24BCCF
+          # pacman's free space check fails inside containers
+          sed -i 's/^CheckSpace/#CheckSpace/' /opt/devkitpro/pacman/etc/pacman.conf
+          printf '\n[webhdx-devkitpro]\nServer = https://packages.webhdx.dev\n' >> /opt/devkitpro/pacman/etc/pacman.conf
+          dkp-pacman -Sy --noconfirm libogc2-libdvm-ideexi-git
+
+      - name: Build
+        run: make
+
+      - name: Package
+        run: |
+          mkdir -p dist/apps/ftpii
+          cp ftpii.dol dist/apps/ftpii/default.dol
+          cp assets/opening.bnr dist/apps/ftpii/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ftpii-${{ github.sha }}
+          path: dist
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ftpii-${{ github.sha }}
+          path: dist
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd dist && zip -r ../ftpii-${{ github.ref_name }}.zip apps)
+          gh release create ${{ github.ref_name }} ftpii-${{ github.ref_name }}.zip -R ${{ github.repository }} --generate-notes

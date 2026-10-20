@@ -43,22 +43,15 @@ void initialise_network() {
     struct in_addr gateway = {0};
 
     printf("Waiting for network to initialise...\n");
-    s32 result = -1;
-    while (!check_reset_synchronous() && result < 0) {
-        result = if_configex(&s_addr, &netmask, &gateway, TRUE);
-        if (result < 0) printf("net_init() failed: [%i] %s, retrying...\n", result, strerror(-result));
-    }
-    if (result >= 0) {
-        u32 ip = 0;
-        do {
-            ip = net_gethostip();
-            if (!ip) printf("net_gethostip() failed, retrying...\n");
-        } while (!check_reset_synchronous() && !ip);
-        if (ip) {
-            struct in_addr addr;
-            addr.s_addr = ip;
-            printf("Network initialised.  Wii IP address: %s\n", inet_ntoa(addr));
-        }
+    // libogc2 only initialises the interface on the first call; later calls return 0
+    s32 result = if_configex(&s_addr, &netmask, &gateway, TRUE);
+    if (result < 0) printf("net_init() failed: [%i], waiting for DHCP...\n", result);
+    u32 ip = 0;
+    while (!check_reset_synchronous() && !(ip = net_gethostip())) VIDEO_WaitVSync();
+    if (ip) {
+        struct in_addr addr;
+        addr.s_addr = ip;
+        printf("Network initialised.  Wii IP address: %s\n", inet_ntoa(addr));
     }
 }
 

@@ -33,13 +33,17 @@ typedef struct {
     const char *prefix;
     bool inserted;
     bool geckofail;
-    const DISC_INTERFACE *disc;
+    DISC_INTERFACE *disc;
 } VIRTUAL_PARTITION;
 
-extern VIRTUAL_PARTITION VIRTUAL_PARTITIONS[2];
+extern VIRTUAL_PARTITION VIRTUAL_PARTITIONS[6];
 extern const u32 MAX_VIRTUAL_PARTITIONS;
 extern VIRTUAL_PARTITION *PA_GCSDA;
 extern VIRTUAL_PARTITION *PA_GCSDB;
+extern VIRTUAL_PARTITION *PA_GCSD2;
+extern VIRTUAL_PARTITION *PA_ATAA;
+extern VIRTUAL_PARTITION *PA_ATAB;
+extern VIRTUAL_PARTITION *PA_ATAC;
 
 void initialise_fs();
 
